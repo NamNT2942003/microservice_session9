@@ -124,3 +124,40 @@ cd pharmacy-service
    Body: {}
    ```
    *Mức thuế mới 5% sẽ được nạp lại vào bộ nhớ ngay lập tức mà không cần khởi động lại ứng dụng.*
+
+---
+
+## 6. Triển khai Circuit Breaker cho dịch vụ Kiểm tra kho thuốc (Resilience4j)
+
+### Kiến trúc:
+- `warehouse-service` (Port 8082): Cung cấp API kiểm tra kho tổng và giả lập sự cố.
+- `pharmacy-service` (Port 8081): Tích hợp `@CircuitBreaker(name = "warehouseCB", fallbackMethod = "checkWarehouseFallback")`.
+
+### Hướng dẫn kiểm thử:
+
+1. **Khởi động Warehouse Service**:
+   ```bash
+   cd warehouse-service
+   .\mvnw.cmd spring-boot:run
+   ```
+
+2. **Kiểm tra kho khi bình thường**:
+   ```bash
+   GET http://localhost:8081/api/pharmacy/warehouse/check/Panadol
+   ```
+   *Kết quả: Trả về 500 hộp thuốc từ Kho Tổng.*
+
+3. **Giả lập sự cố Kho tổng sập**:
+   ```bash
+   POST http://localhost:8082/api/v1/warehouse/simulate/status?failure=true
+   ```
+
+4. **Kiểm tra ngắt mạch (Circuit Breaker OPEN)**:
+   - Gọi lại `GET http://localhost:8081/api/pharmacy/warehouse/check/Panadol`.
+   - Sau các lần lỗi vượt ngưỡng 50%, mạch chuyển sang `OPEN` và trả về ngay phản hồi Fallback (`FALLBACK_OFFLINE_MODE`) dạng Fail-fast để tránh treo hệ thống tính tiền.
+
+5. **Khôi phục dịch vụ**:
+   ```bash
+   POST http://localhost:8082/api/v1/warehouse/simulate/status?failure=false
+   ```
+   - Sau 20 giây (`wait-duration-in-open-state=20s`), mạch chuyển sang `HALF-OPEN` $\to$ kiểm tra thành công $\to$ mạch tự động đóng lại (`CLOSED`).
