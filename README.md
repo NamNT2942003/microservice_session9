@@ -85,6 +85,42 @@ cd pharmacy-service
    >>>> [TOTAL MEDICINES LOADED]: 4
    =================================================================
    ```
-2. **Kiểm tra REST API**:
+2. **Kiểm tra REST API & Quản lý thuốc**:
    - `GET http://localhost:8081/api/pharmacy/info` : Trả về thông tin chi nhánh và trạng thái kết nối.
    - `GET http://localhost:8081/api/pharmacy/medicines` : Trả về danh sách thuốc trong kho.
+
+---
+
+## 5. Cập nhật giá thuốc / Thuế VAT "Nóng" không Restart (@RefreshScope)
+
+1. **Xem tỷ lệ thuế hiện tại**:
+   ```bash
+   GET http://localhost:8081/api/v1/bill/vat-rate
+   ```
+2. **Tính tiền hóa đơn**:
+   ```bash
+   POST http://localhost:8081/api/v1/bill
+   Content-Type: application/json
+
+   {
+     "items": [
+       {
+         "medicineName": "Panadol Extra",
+         "price": 50000.0,
+         "quantity": 2
+       }
+     ]
+   }
+   ```
+   *(Công thức: Tổng tiền = Tiền thuốc + (Tiền thuốc * % VAT))*
+
+3. **Cập nhật cấu hình trên Git**:
+   - Đổi `pharmacy.vat-rate=0.05` (5%) trong `pharmacy-service.properties`, sau đó commit & push lên Git.
+
+4. **Kích hoạt Dynamic Refresh**:
+   ```bash
+   POST http://localhost:8081/actuator/refresh
+   Content-Type: application/json
+   Body: {}
+   ```
+   *Mức thuế mới 5% sẽ được nạp lại vào bộ nhớ ngay lập tức mà không cần khởi động lại ứng dụng.*
