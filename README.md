@@ -127,37 +127,66 @@ cd pharmacy-service
 
 ---
 
-## 6. Triển khai Circuit Breaker cho dịch vụ Kiểm tra kho thuốc (Resilience4j)
+## 7. Phương án dự phòng Fallback khi mất kết nối kho tổng (Bài tập 4)
 
-### Kiến trúc:
-- `warehouse-service` (Port 8082): Cung cấp API kiểm tra kho tổng và giả lập sự cố.
-- `pharmacy-service` (Port 8081): Tích hợp `@CircuitBreaker(name = "warehouseCB", fallbackMethod = "checkWarehouseFallback")`.
+- **Cơ chế**: Khi kho tổng bị ngắt mạch hoặc lỗi mạng, hàm Fallback tự động truy vấn tồn kho cục bộ trong DB của hiệu thuốc.
+- **Kiểm thử**:
+  ```bash
+  GET http://localhost:8081/api/pharmacy/warehouse/check/Panadol
+  ```
+  *Phản hồi: Trả về thông báo "Không thể kết nối kho tổng. Hệ thống sẽ sử dụng dữ liệu tồn kho cục bộ để tiếp tục giao dịch" kèm `localStockQuantity`.*
 
-### Hướng dẫn kiểm thử:
+---
 
-1. **Khởi động Warehouse Service**:
-   ```bash
-   cd warehouse-service
-   .\mvnw.cmd spring-boot:run
-   ```
+## 8. Giới hạn số lượng đơn thuốc và Tự động thử lại (Rate Limiter & Retry)
 
-2. **Kiểm tra kho khi bình thường**:
-   ```bash
-   GET http://localhost:8081/api/pharmacy/warehouse/check/Panadol
-   ```
-   *Kết quả: Trả về 500 hộp thuốc từ Kho Tổng.*
+### 1. Giới hạn tần suất xuất hóa đơn (Rate Limiter - 5 hóa đơn / 10s):
+```bash
+POST http://localhost:8081/api/v1/invoice/issue
+Content-Type: application/json
 
-3. **Giả lập sự cố Kho tổng sập**:
-   ```bash
-   POST http://localhost:8082/api/v1/warehouse/simulate/status?failure=true
-   ```
+{
+  "customerName": "Nguyen Van A",
+  "totalAmount": 150000.0,
+  "simulateNetworkError": false
+}
+```
+*Gửi từ 6 request liên tiếp trở lên trong 10 giây sẽ nhận phản hồi `RATE_LIMITED`.*
 
-4. **Kiểm tra ngắt mạch (Circuit Breaker OPEN)**:
-   - Gọi lại `GET http://localhost:8081/api/pharmacy/warehouse/check/Panadol`.
-   - Sau các lần lỗi vượt ngưỡng 50%, mạch chuyển sang `OPEN` và trả về ngay phản hồi Fallback (`FALLBACK_OFFLINE_MODE`) dạng Fail-fast để tránh treo hệ thống tính tiền.
+### 2. Tự động thử lại khi lỗi mạng (Retry - 3 lần, cách nhau 2s):
+```bash
+POST http://localhost:8081/api/v1/invoice/issue
+Content-Type: application/json
 
-5. **Khôi phục dịch vụ**:
-   ```bash
-   POST http://localhost:8082/api/v1/warehouse/simulate/status?failure=false
-   ```
-   - Sau 20 giây (`wait-duration-in-open-state=20s`), mạch chuyển sang `HALF-OPEN` $\to$ kiểm tra thành công $\to$ mạch tự động đóng lại (`CLOSED`).
+{
+  "customerName": "Nguyen Van B",
+  "totalAmount": 200000.0,
+  "simulateNetworkError": true
+}
+```
+*Hệ thống tự thử lại 3 lần rồi chuyển sang lưu tạm hóa đơn offline `SAVED_LOCALLY_PENDING_SYNC`.*
+
+---
+
+## 9. Hệ thống bán thuốc tự phục hồi toàn diện (Full Resilience - BHYT)
+
+- **TimeLimiter (3s)**: Tự ngắt khi cổng BHYT phản hồi chậm > 3s.
+- **Retry (3 lần, 2s)**: Tự động gửi lại nếu gặp sự cố kết nối.
+- **Circuit Breaker (Ngưỡng 60%)**: Ngắt mạch nếu tỷ lệ lỗi liên tục vượt quá 60%.
+- **Fallback**: Trả về giá gốc chưa chiết khấu + ghi chú "Xác thực bảo hiểm sau".
+
+### Kiểm thử:
+```bash
+POST http://localhost:8081/api/v1/insurance/verify
+Content-Type: application/json
+
+{
+  "insuranceCardNumber": "DN4010123456789",
+  "patientName": "Nguyen Van A",
+  "medicineName": "Panadol Extra",
+  "originalPrice": 100000.0,
+  "simulateDelaySeconds": 5,
+  "simulateError": false
+}
+```
+*Khi `simulateDelaySeconds = 5` (> 3s), hệ thống tự ngắt sau 3s và trả về Fallback.*
