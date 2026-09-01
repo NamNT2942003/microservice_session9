@@ -28,9 +28,18 @@ public class PharmacyController {
     private String datasourceUrl;
 
     private final MedicineRepository medicineRepository;
+    private final com.example.pharmacyservice.service.WarehouseClientService warehouseClientService;
 
-    public PharmacyController(MedicineRepository medicineRepository) {
+    public PharmacyController(MedicineRepository medicineRepository, 
+                              com.example.pharmacyservice.service.WarehouseClientService warehouseClientService) {
         this.medicineRepository = medicineRepository;
+        this.warehouseClientService = warehouseClientService;
+    }
+
+    @GetMapping("/warehouse/check/{medicineName}")
+    public ResponseEntity<Map<String, Object>> checkCentralWarehouseStock(
+            @org.springframework.web.bind.annotation.PathVariable String medicineName) {
+        return ResponseEntity.ok(warehouseClientService.checkStockInWarehouse(medicineName));
     }
 
     @GetMapping("/info")
